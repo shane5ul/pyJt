@@ -143,7 +143,7 @@ def GetWeights(H, t, s, wb):
     % Function: GetWeights(input)
     %
     % Finds the weight of "each" mode by taking a weighted average of its contribution
-    % to G(t)
+    % to J(t)
     %
     % Input: H = CRS (ns * 1)
     %        t = n*1 vector contains times
@@ -343,19 +343,15 @@ def getDiscSpecMagic(par):
     # Input: Communicated by the datastructure "par"
     #
     # Output: Nopt    = optimum number of discrete modes
-    #         [g tau] = spectrum
+    #         [j lam] = spectrum
     #         error   = error norm of the discrete fit
     #        
     #         dmodes.dat : Prints the [g tau] for the particular Nopt
     #         aic.dat    : [N error aic]
-    #         Gfitd.dat  : The discrete G(t) for Nopt [t Gt]"""
+    #         Jfitd.dat  : The discrete J(t) for Nopt [t Jt]"""
 
     texp, Jexp, s, Lplus, Nv, Gc, Cerror = initializeDiscSpec(par)
-    
-    ################
-    # ~ Cerror = 1.0
-        
-        
+                
     n    = len(texp);
     ns   = len(s);
     npts = len(Nv)
@@ -399,8 +395,6 @@ def getDiscSpecMagic(par):
 
     
     # global best settings of wb and Nopt; note this is nominal Nopt (!= len(g) due to NNLS)
-    
-    
     Nopt  = int(Nbst[np.argmin(AICbst)])
     wbopt = wtBase[np.argmin(AICbst)]
 
@@ -410,7 +404,7 @@ def getDiscSpecMagic(par):
     wt     = GetWeights(Lplus[:ns], texp, s, wbopt)    
     z, hz  = GridDensity(np.log(s), wt, Nopt)           # Select "tau" Points
     
-    g, tau, error, cKp = MaxwellModes(z, texp, Jexp, par['liquid'])   # Get g_i, taui
+    g, tau, error, cKp = MaxwellModes(z, texp, Jexp, par['liquid'])   # Get j_i, lami
 
 
     #
@@ -452,22 +446,13 @@ def getDiscSpecMagic(par):
     g  = g[:len(tau)]
 
 
-    # ~ nmode = len(tau)
-
-    # ~ print(nmode)
-    # ~ print(Je - sum(g[:nmode]))
-    # ~ quit()
-
-
     if par['verbose']:
         print('(*) Number of optimum nodes = {0:d}'.format(len(g)))
 
     #
     # Some Plotting
     #
-
     if par['plotting']:
-
         plt.clf()
         plt.plot(wtBase, AICbst, label='AIC')
         plt.plot(wtBase, nzNbst, label='Nbst')
@@ -483,8 +468,8 @@ def getDiscSpecMagic(par):
         plt.clf()
         plt.loglog(tau, g,'o-', label='disc')
         plt.loglog(s, np.exp(Lplus[:ns]), label='cont')
-        plt.xlabel(r'$\tau$')
-        plt.ylabel(r'$g$')
+        plt.xlabel(r'$\lambda$')
+        plt.ylabel(r'$j$')
         plt.legend(loc='lower right')
         plt.tight_layout()
         plt.savefig('output/dmodes.pdf')        
@@ -503,8 +488,8 @@ def getDiscSpecMagic(par):
         plt.loglog(texp, GtM, label='disc')    
 
         plt.loglog(texp, Gc, '--', label='cont')
-        plt.xlabel('t')
-        plt.ylabel('G(t)')
+        plt.xlabel(r'$t$')
+        plt.ylabel(r'$J(t)$')
         plt.legend()
         plt.tight_layout()
         plt.savefig('output/Jfitd.pdf')

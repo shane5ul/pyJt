@@ -1,14 +1,10 @@
 #
-# Help to find continuous spectrum
-# March 2019 major update:
-# (i)   added plateau modulus G0 (also in pyReSpect-time) calculation
-# (ii)  following Hansen Bayesian interpretation of Tikhonov to extract p(lambda)
-# (iii) simplifying lcurve (starting from high lambda to low)
-# (iv)  changing definition of rho2 and eta2 (no longer dividing by 1/n and 1/nl)
+# Help to find continuous retardation spectrum
+#
 
-
-# 4/10/23: code works okay, but lamC inferred is too large [needs to be down by 100x] to get good data fit.
-# is this because data is discrete? Or range of data is not too large? Don't know right now.
+# This is largely based on pyReSpect-time for extracting the continuous and discrete relaxation spectrum from G(t)
+# using a Bayesian framework for deciding the strength of the regularization constraint.
+#
 
 from common import *
 
@@ -27,13 +23,13 @@ def InitializeSpectrum(texp, Jexp, s, kernMat, isLiquid):
      Output:   Lspec = guessed L spectrum
     """
     #
-    # To guess spectrum, pick a negative Hgs and a large value of lambda to get a
+    # To guess spectrum, pick a spectrum that is consistent with a large value of lambda to get a
     # solution that is most determined by the regularization
     # March 2019; a single guess is good enough now, because going from large lambda to small
     #             lambda in lcurve.
 
     Lspec = -5.0 * np.ones(len(s)) + np.sin(np.pi * s)
-    lam   = 1e0
+    lam   = 1e1
     
     if isLiquid:
         invEta0 = (Jexp[-1] - Jexp[-2])/(texp[-1] - texp[-2]) # guess dJ/dt t -> infty
@@ -48,23 +44,22 @@ def InitializeSpectrum(texp, Jexp, s, kernMat, isLiquid):
 
     LplusImp = getH(lam, texp, Jexp, Lplus, kernMat)
 
-    # ~ ns = len(s);
-    # ~ print(ns, len(Lplus), len(LplusImp), len(s))
-    # ~ plt.plot(s, LplusImp[:-2])
-    # ~ plt.plot(s, Lplus[:-2])
-    
-    # ~ plt.xscale('log')
-    # ~ plt.show()
+    # plt.plot(s, LplusImp[:-2])
+    # plt.plot(s, Lplus[:-2])    
+    # plt.xscale('log')
+    # plt.show()
 
 
-    # ~ K = kernel_prestore(LplusImp, kernMat, texp, Jexp)
-    # ~ plt.loglog(texp, Jexp,'o', texp, K, 'k-')
-    # ~ plt.xlabel(r'$t$')
-    # ~ plt.ylabel(r'$J(t)$')
+    # plt.clf()
+    # K = kernel_prestore(LplusImp, kernMat, texp, Jexp)
+    # plt.loglog(texp, Jexp,'o', texp, K, 'k-')
+    # plt.xlabel(r'$t$')
+    # plt.ylabel(r'$J(t)$')
     
-    # ~ plt.tight_layout()
-    # ~ plt.show()
-    # ~ quit()
+    # plt.tight_layout()
+    # plt.show()
+
+    # quit()
 
     return LplusImp
 
@@ -162,12 +157,15 @@ def lcurve(texp, Jexp, Lgs, kernMat, par):
         # ~ logP[i]    = -V + 0.5 * (LogDetN + ns*np.log(lamb) - LogDetC) - lamb*1e6
         logP[i]    = -V + 0.5 * (LogDetN + ns*np.log(lamb) - LogDetC) - lamb
         
-        #print('{:2d} {:.4e} {:.4e} {:.4e} {:.4e}\n'.format(i, lamb, rho[i], eta[i], logPmax-logP[i]))
+        # # print progress
+        # if i == len(lam)-1:
+        #     print("\n")
+        # print('{:2d} {:.2e} {:.2e} {:.2e} {:.2e}'.format(i, lamb, rho[i], eta[i], logPmax-logP[i]))
 
         
         if(logP[i] > logPmax):
             logPmax = logP[i]
-        elif(logP[i] < logPmax - 18):
+        elif(logP[i] < logPmax - 12):
             break
 
 
@@ -200,7 +198,7 @@ def lcurve(texp, Jexp, Lgs, kernMat, par):
     if par['plotting']:
         plt.clf()
         plt.axvline(x=lamC, c='gray', label=r'$\lambda_c$')
-        plt.ylim(-20,1)
+        plt.ylim(-15,1)
         plt.plot(lam, logP, 'o-')
         plt.xscale('log')
         plt.xlabel(r'$\lambda$')
@@ -478,7 +476,10 @@ def getContSpec(par):
 
         K = kernel_prestore(Lplus, kernMat, texp, Jexp)
 
-        plt.loglog(texp, Jexp,'o', texp, K, 'k-')
+        plt.plot(texp, Jexp, 'o', alpha=0.7)
+        plt.plot(texp, K, 'C1')
+        plt.xscale('log')
+        plt.yscale('log')
         plt.xlabel(r'$t$')
         plt.ylabel(r'$J(t)$')
         
@@ -500,12 +501,10 @@ def getContSpec(par):
             rhost = np.exp(np.interp(np.log(lamC), np.log(lam), np.log(rho)))
             etast = np.exp(np.interp(np.log(lamC), np.log(lam), np.log(eta)))
 
-            plt.plot(rhost, etast, 'o', color='k')
+            plt.plot(rhost, etast, 'o', color='C1')
             plt.xscale('log')
             plt.yscale('log')
-            
-            #~ print(rhost, etast)
-            
+                        
             plt.xlabel(r'$\rho$')
             plt.ylabel(r'$\eta$')
             plt.tight_layout()

@@ -28,10 +28,10 @@ else:
     sns.set_style({"xtick.direction": "in","ytick.direction": "in"})
 
 from matplotlib import rcParams
-rcParams['axes.labelsize'] = 28 
-rcParams['xtick.labelsize'] = 20
-rcParams['ytick.labelsize'] = 20 
-rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize'] = 24 
+rcParams['xtick.labelsize'] = 18
+rcParams['ytick.labelsize'] = 18 
+rcParams['legend.fontsize'] = 18
 rcParams['lines.linewidth'] = 2
 
 #
@@ -40,7 +40,7 @@ rcParams['lines.linewidth'] = 2
 #
 # def readInput(InpDataFileName)  : read input data to determine program settings
 # def GetExpData(GtDataFileName)  : read experimental data
-# def getKernMat(s, t)               : prestore Kernel Matrix, ... together with ...
+# def getKernMat(s, t)            : prestore Kernel Matrix, ... together with ...
 # def kernel_prestore(H, kernMat) : ... greatly speeds evaluation of the kernel and overall speed
 #
 
@@ -115,7 +115,6 @@ def getKernMat(s, t):
     S, T        = np.meshgrid(s, t);
     
     return np.exp(-T/S) * hsv;
-
 
 def kernel_prestore(Lplus, kernMat, texp, Jexp):
     """
