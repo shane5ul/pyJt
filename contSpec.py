@@ -408,7 +408,7 @@ def getContSpec(par):
 
         if par['liquid']:
             np.savetxt('output/L.dat', np.c_[s, Lplus[:ns]], fmt='%.8e', 
-                        header='Je, invEta0 = {0:0.8e}\t{1:0.8e}'.format(Lplus[ns], Lplus[ns+1]))
+                        header='Je, invEta0 = {0:.8e}\t{1:.8e}'.format(Lplus[ns], Lplus[ns+1]))
         else:
             np.savetxt('output/L.dat', np.c_[s, Lplus[:ns]], fmt='%.8e', 
                         header='Je = {0:.8e}'.format(Lplus[ns]))
