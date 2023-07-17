@@ -503,13 +503,13 @@ def getDiscSpecMagic(par):
         print('(*) log10(Condition number) of matrix equation: {0:.2f}'.format(np.log10(cKp)))
 
         if par['liquid']:
-            print('(*) Je     : {0:.3e}'.format(Je))
-            print('(*) invEta0: {0:.3e}'.format(invEta0))
+            print('(*) Je     : {0:.8e}'.format(Je))
+            print('(*) invEta0: {0:.8e}'.format(invEta0))
             np.savetxt('output/dmodes.dat', np.c_[g, tau, dtau], fmt='%e', 
-                        header='Je, invEta0 = {0:0.3e}\t{1:0.3e}'.format(Je, invEta0))
+                        header='Je, invEta0 = {0:0.8e}\t{1:0.8e}'.format(Je, invEta0))
         else:
             np.savetxt('output/dmodes.dat', np.c_[g, tau, dtau], fmt='%e',
-                        header='Je = {0:0.3e}'.format(Je))
+                        header='Je = {0:0.8e}'.format(Je))
 
         print('\n\t\tModes\n\t\t-----\n\n')
         print('  i \t    j(i) \t    lam(i)\t    dlam(i)\n')
