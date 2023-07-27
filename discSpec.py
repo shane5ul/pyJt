@@ -1,5 +1,7 @@
 #
-# 3/2019: adding G0 support stored as last gi in transport
+# 7/2023: allowing an optional weight column in the input data file + encapsulation of private functions
+#         cleaning up nomenclature to be more compliance friendly
+# 3/2019: Based on pyReSpect-time with G- adjustment
 #
 #
 # 12/15/2018: 
@@ -13,7 +15,7 @@ np.set_printoptions(precision=2)
 
 def initializeDiscSpec(par):
     """Returns:
-        (*)    the experimental data: texp, Gexp
+        (*) the experimental data: texp, Jexp, wexp
         (*) the continuous spectrum: s, L (from output/L.dat)
         (*) Number of modes range: Nv
         (*) Error Weight estimate from Continuous Curve (AIC criterion)
@@ -24,14 +26,13 @@ def initializeDiscSpec(par):
         print('\n(*) Start\n(*) Loading Data Files: ... {}...'.format(par['JexpFile']))
 
     # Read experimental data
-    texp, Jexp = GetExpData(par['JexpFile'])
+    texp, Jexp, wexp = GetExpData(par['JexpFile'])
 
     # Read the continuous spectrum
     fNameH  = 'output/L.dat'
     s, Lspec = np.loadtxt(fNameH, unpack=True)
 
     n    = len(texp);
-    ns   = len(s);
     
     # range of N scanned
     Nmin  = max(np.floor(0.5 * np.log10(max(texp)/min(texp))),2);   # minimum Nopt
@@ -44,7 +45,6 @@ def initializeDiscSpec(par):
 
     # Estimate Error Weight from Continuous Curve Fit
     kernMat = getKernMat(s, texp)
-    
     
     # Read Je and invEta0
     try:
@@ -62,46 +62,45 @@ def initializeDiscSpec(par):
         Je      = float(first_line[-1]);
         Lplus= np.append(Lspec, Je)
         
-    Jc = kernel_prestore(Lplus, kernMat, texp, Jexp)
+    Jc = kernel_prestore(Lplus, kernMat, texp)
     
-    Cerror  = 1./(np.std(Jc/Jexp - 1.))  #    Cerror = 1.?
+    Cerror  = 1./(np.std(wexp*(Jc/Jexp - 1.)))  #    Cerror = 1.?
     
-    return texp, Jexp, s, Lplus, Nv, Jc, Cerror
+    return texp, Jexp, wexp, s, Lplus, Nv, Jc, Cerror
 
-def MaxwellModes(z, t, Jt, isLiquid):
+def MaxwellModes(z, t, Jexp, wexp, isLiquid):
     """    
      Function: MaxwellModes(input)
     
      Solves the linear least squares problem to obtain the DRS
 
-     Input: z  = points distributed according to the density, [z = log(tau)]
+     Input: z  = points distributed according to the density, [z = log(lam)]
             t  = n*1 vector contains times,
-            Jt = n*1 vector contains J(t),
+            Jexp = n*1 vector contains J(t),
+		    wexp = weight vector of experimental data
             isLiquid = True/False
     
-     Output: g, tau = spectrum  (array)
+     Output: j, lam = spectrum  (array)
              error = relative error between the input data and the G(t) inferred from the DRS
              condKp = condition number
     """
     N      = len(z)
-    tau    = np.exp(z)
-    n      = len(t)
-    Gexp   = Jt
-    
+    lam    = np.exp(z)
+
     #
-    # Prune small and -ve weights g(i)
+    # Prune small and -ve weights j(i)
     #
-    g, error, condKp = nnLLS(t, tau, Gexp, isLiquid)
+    j, error, condKp = nnLLS(t, lam, Jexp, wexp, isLiquid)
         
     # search for small 
-    izero = np.where(g[:N]/max(g[:N]) < 1e-7)
+    izero = np.where(j[:N]/max(j[:N]) < 1e-7)
     
-    tau   = np.delete(tau, izero)
-    g     = np.delete(g, izero)
+    lam   = np.delete(lam, izero)
+    j     = np.delete(j, izero)
 
-    return g, tau, error, condKp
+    return j, lam, error, condKp
 
-def nnLLS(t, tau, Gexp, isLiquid):
+def nnLLS(t, lam, Jexp, wexp, isLiquid):
     """
     # 4/14/2023: changing this to ensure Je > sum(j)
     #
@@ -110,35 +109,42 @@ def nnLLS(t, tau, Gexp, isLiquid):
     #
     """
 
-    n       = len(Gexp)
-    nmodes  = len(tau)
-    S, T    = np.meshgrid(tau, t)
-#    K       = -np.exp(-T/S)        # n * nmodes (-ve sign for compliance)
-    K       = 1 - np.exp(-T/S)        # 4/23/2023
+    # The K matrix has 1-exp(-t/s) to ensure Je > sum(j)
+    n       = len(Jexp)
+    nmodes  = len(lam)
+    S, T    = np.meshgrid(lam, t)
+    K       = 1 - np.exp(-T/S)        # n * nmodes (-ve sign for compliance) 4/23/2023
 
     # K is n*np [where np = ns+1 or ns+2]
     if isLiquid:
         K = np.hstack(( K, np.ones((n, 1)), t.reshape((n,1)) ))    # 1 for Je, and t for invEta0
     else:
-        K = np.hstack(( K, np.ones((len(Gexp), 1)) ))
+        K = np.hstack(( K, np.ones((len(Jexp), 1)) ))
         
     #
-    # gets (Gt/GtE - 1)^2, instead of  (Gt -  GtE)^2
+    # gets wE*(Jt/JtE - 1)^2, instead of  (Jt -  JtE)^2
+	# 7/27/2023: note with wexp; RHS becomes wexp rather than ones [wLLS is X'WX = X'Wy]
     #
-    Kp      = np.dot(np.diag((1./Gexp)), K)
+    Kp      = np.dot(np.diag((wexp/Jexp)), K)
     condKp  = np.linalg.cond(Kp)
-    g       = nnls(Kp, np.ones(len(Gexp)))[0]
+    j       = nnls(Kp, wexp)[0]
 
-    GtM       = np.dot(K, g)
-    error     = np.sum((GtM/Gexp - 1.)**2)
+    JtM       = np.dot(K, j)
+    error     = np.sum((wexp*(JtM/Jexp - 1.))**2)
         
     # Jep only lives inside NNLS
-    g[nmodes] = g[nmodes] + np.sum(g[:nmodes])
+    j[nmodes] = j[nmodes] + np.sum(j[:nmodes])
 
-    return g, error, condKp
+    return j, error, condKp
 
 def GetWeights(H, t, s, wb):
     """
+
+    #
+    # to test from below here!
+    #
+    #
+
     %
     % Function: GetWeights(input)
     %
@@ -166,13 +172,13 @@ def GetWeights(H, t, s, wb):
     S, T    = np.meshgrid(s, t)
     kern    = np.exp(-T/S)        # n * ns
     wij     = np.dot(kern, np.diag(hs * np.exp(H)))  # n * ns
-    K       = np.dot(kern, hs * np.exp(H))         # n * 1, comparable with Gexp
+    K       = np.dot(kern, hs * np.exp(H))         # n * 1, comparable with Jexp
 
     for i in np.arange(n):
         wij[i,:] = wij[i,:]/K[i]
 
-    for j in np.arange(ns):
-        wt[j] = np.sum(wij[:,j])
+    for k in np.arange(ns):
+        wt[k] = np.sum(wij[:,k])
 
     wt  = wt/np.trapz(wt, np.log(s))
     wt  = (1. - wb) * wt + (wb * np.mean(wt)) * np.ones(len(wt))
@@ -232,106 +238,111 @@ def GridDensity(x, px, N):
 
     return z, h
 
-def mergeModes_magic(g, tau, imode):
+def mergeModes_magic(j, lam, imode):
     """merge modes imode and imode+1 into a single mode
-       return gp and taup corresponding to this new mode;
+       return gp and lamp corresponding to this new mode;
        12/2018 - also tries finetuning before returning
        
        uses helper functions:
        - normKern_magic()
        - costFcn_magic()   
     """
-    
-    iniGuess = [g[imode] + g[imode+1], 0.5*(tau[imode] + tau[imode+1])]
-    res      = minimize(costFcn_magic, iniGuess, args=(g, tau, imode))
+    ### begin encapsulation
+    def costFcn_magic(par, j, lam, imode):
+        """"helper function for mergeModes; establishes cost function to minimize"""
 
-    newtau   = np.delete(tau, imode+1)
-    newtau[imode] = res.x[1]
+        jn   = par[0]
+        lamn = par[1]
+
+        j1   = j[imode]
+        j2   = j[imode+1]
+        lam1 = lam[imode]
+        lam2 = lam[imode+1]
+
+        tmin = min(lam1, lam2)/10.
+        tmax = max(lam1, lam2)*10.
+
+        def normKern_magic(t, jn, lamn, j1, lam1, j2, lam2):
+            """helper function: for costFcn and mergeModes"""
+            Jn = jn * np.exp(-t/lamn)
+            Jo = j1 * np.exp(-t/lam1) + j2 * np.exp(-t/lam2)
+            return (Jn/Jo - 1.)**2
+
+        return quad(normKern_magic, tmin, tmax, args=(jn, lamn, j1, lam1, j2, lam2))[0]
+    ###end encapsulation
+
+    iniGuess = [j[imode] + j[imode+1], 0.5*(lam[imode] + lam[imode+1])]
+    res      = minimize(costFcn_magic, iniGuess, args=(j, lam, imode))
+
+    newlam   = np.delete(lam, imode+1)
+    newlam[imode] = res.x[1]
         
-    return newtau
+    return newlam
 
-def normKern_magic(t, gn, taun, g1, tau1, g2, tau2):
-    """helper function: for costFcn and mergeModes"""
-    Gn = gn * np.exp(-t/taun)
-    Go = g1 * np.exp(-t/tau1) + g2 * np.exp(-t/tau2)
-    return (Gn/Go - 1.)**2
-
-def costFcn_magic(par, g, tau, imode):
-    """"helper function for mergeModes; establishes cost function to minimize"""
-    gn   = par[0]
-    taun = par[1]
-
-    g1   = g[imode]
-    g2   = g[imode+1]
-    tau1 = tau[imode]
-    tau2 = tau[imode+1]
-
-    tmin = min(tau1, tau2)/10.
-    tmax = max(tau1, tau2)*10.
-
-    return quad(normKern_magic, tmin, tmax, args=(gn, taun, g1, tau1, g2, tau2))[0]
-
-def FineTuneSolution(tau, t, Gexp, isLiquid, estimateError=False):
-    """Given a spacing of modes tau, tries to do NLLS to fine tune it further
-       If it fails, then it returns the old tau back
+def FineTuneSolution(lam, t, Jexp, wexp, isLiquid, estimateError=False):
+    """Given a spacing of modes lam, tries to do NLLS to fine tune it further
+       If it fails, then it returns the old lam back
        
        Uses helper function: res_tG which computes residuals
        """
+    ### begin encapsulation
+    def res_tG(lam, texp, Jexp, wexp, isLiquid):
+        """
+            Helper function for final optimization problem
+        """
+        j, _, _ = nnLLS(texp, lam, Jexp, wexp, isLiquid)
+        Jmodel  = np.zeros(len(texp))
+
+        for k in range(len(lam)):
+            Jmodel -= j[k] * np.exp(-texp/lam[k])
+        
+        # add Je + t * invEta0
+        if isLiquid:
+            Jmodel += j[-2] + texp * j[-1]
+        else:
+            Jmodel += j[-1]
+            
+        residual = wexp * (Jmodel/Jexp - 1.)
+            
+        return residual
+    ###end encapsulation
+
     success = False
            
     try:
-        res  = least_squares(res_tG, tau, bounds=(0., np.inf), args=(t, Gexp, isLiquid))
-        tau  = res.x
-        tau0 = tau.copy()
+        res  = least_squares(res_tG, lam, bounds=(0., np.inf), args=(t, Jexp, wexp, isLiquid))
+        lam  = res.x
+        lam0 = lam.copy()
 
         # Error Estimate    
         if estimateError:
             J = res.jac
             cov = np.linalg.pinv(J.T.dot(J)) * (res.fun**2).mean()
-            dtau = np.sqrt(np.diag(cov))
+            dlam = np.sqrt(np.diag(cov))
 
         success = True            
     except:    
         pass
-
     
-    g, tau, _, _ = MaxwellModes(np.log(tau), t, Gexp, isLiquid)   # Get g_i, taui
+    j, lam, _, _ = MaxwellModes(np.log(lam), t, Jexp, wexp, isLiquid)   # Get g_i, lami
 
     #
-    # if mode has dropped out, then need to delete corresponding dtau mode
+    # if mode has dropped out, then need to delete corresponding dlam mode
     #
     if estimateError and success:
-        if len(tau) < len(tau0):        
+        if len(lam) < len(lam0):        
             nkill = 0
-            for i in range(len(tau0)):
-                if np.min(np.abs(tau0[i] - tau)) > 1e-12 * tau0[i]:
-                    dtau = np.delete(dtau, i-nkill)
+            for i in range(len(lam0)):
+                if np.min(np.abs(lam0[i] - lam)) > 1e-12 * lam0[i]:
+                    dlam = np.delete(dlam, i-nkill)
                     nkill += 1
-        return g, tau, dtau
+        return j, lam, dlam
     elif estimateError:
-        return g, tau, -1*np.ones(len(tau))
+        return j, lam, -1*np.ones(len(lam))
     else:
-        return g, tau
+        return j, lam
 
-def res_tG(tau, texp, Gexp, isLiquid):
-    """
-        Helper function for final optimization problem
-    """
-    g, _, _ = nnLLS(texp, tau, Gexp, isLiquid)
-    Gmodel  = np.zeros(len(texp))
 
-    for j in range(len(tau)):
-        Gmodel -= g[j] * np.exp(-texp/tau[j])
-    
-    # add Je + t * invEta0
-    if isLiquid:
-        Gmodel += g[-2] + texp * g[-1]
-    else:
-        Gmodel += g[-1]
-        
-    residual = Gmodel/Gexp - 1.
-        
-    return residual
 
 def getDiscSpecMagic(par):
     """
@@ -346,11 +357,11 @@ def getDiscSpecMagic(par):
     #         [j lam] = spectrum
     #         error   = error norm of the discrete fit
     #        
-    #         dmodes.dat : Prints the [g tau] for the particular Nopt
+    #         dmodes.dat : Prints the [g lam] for the particular Nopt
     #         aic.dat    : [N error aic]
     #         Jfitd.dat  : The discrete J(t) for Nopt [t Jt]"""
 
-    texp, Jexp, s, Lplus, Nv, Gc, Cerror = initializeDiscSpec(par)
+    texp, Jexp, wexp, s, Lplus, Nv, Gc, Cerror = initializeDiscSpec(par)
                 
     n    = len(texp);
     ns   = len(s);
@@ -374,10 +385,10 @@ def getDiscSpecMagic(par):
 
         for i, N in enumerate(Nv):
 
-            z, hz  = GridDensity(np.log(s), wt, N)     # Select "tau" Points
+            z, hz  = GridDensity(np.log(s), wt, N)     # Select "lam" Points
             
-            g, tau, ev[i], _ = MaxwellModes(z, texp, Jexp, par['liquid'])
-            nzNv[i]          = len(g)
+            j, lam, ev[i], _ = MaxwellModes(z, texp, Jexp, wexp, par['liquid'])
+            nzNv[i]          = len(j)
 
             
         # store the best solution for this particular wb
@@ -402,52 +413,42 @@ def getDiscSpecMagic(par):
     # Recompute the best data-set stats, and fine tune it
     #
     wt     = GetWeights(Lplus[:ns], texp, s, wbopt)    
-    z, hz  = GridDensity(np.log(s), wt, Nopt)           # Select "tau" Points
+    z, hz  = GridDensity(np.log(s), wt, Nopt)           # Select "lam" Points
     
-    g, tau, error, cKp = MaxwellModes(z, texp, Jexp, par['liquid'])   # Get j_i, lami
-
-
-    #
-    # to test from below here!
-    #
-    #
-
-    g, tau, dtau = FineTuneSolution(tau, texp, Jexp, par['liquid'], estimateError=True)
-
-
-
+    j, lam, error, cKp = MaxwellModes(z, texp, Jexp, wexp, par['liquid'])   # Get j_i, lami
+    j, lam, dlam = FineTuneSolution(lam, texp, Jexp, wexp, par['liquid'], estimateError=True)
 
     #
     # Check if modes are close enough to merge
     #
-    if len(tau) > 1:
-        indx       = np.argsort(tau)
-        tau        = tau[indx]
-        tauSpacing = tau[1:]/tau[:-1]
+    if len(lam) > 1:
+        indx       = np.argsort(lam)
+        lam        = lam[indx]
+        lamSpacing = lam[1:]/lam[:-1]
         itry       = 0
 
-        g[:len(tau)] = g[indx]
+        j[:len(lam)] = j[indx]
 
-        while min(tauSpacing) < par['minTauSpacing'] and itry < 3:
-            print("\tTau Spacing < minTauSpacing")
+        while min(lamSpacing) < par['minLamSpacing'] and itry < 3:
+            print("\tlam Spacing < minLamSpacing")
 
-            imode   = np.argmin(tauSpacing)      # merge modes imode and imode + 1    
-            tau     = mergeModes_magic(g, tau, imode)
+            imode   = np.argmin(lamSpacing)      # merge modes imode and imode + 1    
+            lam     = mergeModes_magic(j, lam, imode)
 
-            g, tau, dtau  = FineTuneSolution(tau, texp, Jexp, par['liquid'], estimateError=True)
+            j, lam, dlam  = FineTuneSolution(lam, texp, Jexp, wexp, par['liquid'], estimateError=True)
 
-            tauSpacing = tau[1:]/tau[:-1]
+            lamSpacing = lam[1:]/lam[:-1]
             itry      += 1
 
     if par['liquid']:
-       Je = g[-2]; invEta0 = g[-1]
+       Je = j[-2]; invEta0 = j[-1]
     else:
-        Je = g[-1];
-    g  = g[:len(tau)]
+        Je = j[-1];
+    j  = j[:len(lam)]
 
 
     if par['verbose']:
-        print('(*) Number of optimum nodes = {0:d}'.format(len(g)))
+        print('(*) Number of optimum nodes = {0:d}'.format(len(j)))
 
     #
     # Some Plotting
@@ -466,7 +467,7 @@ def getDiscSpecMagic(par):
 
 
         plt.clf()
-        plt.loglog(tau, g,'o-', label='disc')
+        plt.loglog(lam, j,'o-', label='disc')
         plt.loglog(s, np.exp(Lplus[:ns]), label='cont')
         plt.xlabel(r'$\lambda$')
         plt.ylabel(r'$j$')
@@ -476,16 +477,16 @@ def getDiscSpecMagic(par):
 
 
         plt.clf()
-        S, T    = np.meshgrid(tau, texp)
+        S, T    = np.meshgrid(lam, texp)
         K       = -np.exp(-T/S)        # n * nmodes            
-        GtM     = Je + np.dot(K, g) 
+        JtM     = Je + np.dot(K, j) 
         
         if par['liquid']:
-            GtM += texp * invEta0
+            JtM += texp * invEta0
 
 
         plt.loglog(texp, Jexp,'o')
-        plt.loglog(texp, GtM, label='disc')    
+        plt.loglog(texp, JtM, label='disc')    
 
         plt.loglog(texp, Gc, '--', label='cont')
         plt.xlabel(r'$t$')
@@ -505,33 +506,33 @@ def getDiscSpecMagic(par):
         if par['liquid']:
             print('(*) Je     : {0:.8e}'.format(Je))
             print('(*) invEta0: {0:.8e}'.format(invEta0))
-            np.savetxt('output/dmodes.dat', np.c_[g, tau, dtau], fmt='%e', 
+            np.savetxt('output/dmodes.dat', np.c_[j, lam, dlam], fmt='%e', 
                         header='Je, invEta0 = {0:0.8e}\t{1:0.8e}'.format(Je, invEta0))
         else:
-            np.savetxt('output/dmodes.dat', np.c_[g, tau, dtau], fmt='%e',
+            np.savetxt('output/dmodes.dat', np.c_[j, lam, dlam], fmt='%e',
                         header='Je = {0:0.8e}'.format(Je))
 
         print('\n\t\tModes\n\t\t-----\n\n')
         print('  i \t    j(i) \t    lam(i)\t    dlam(i)\n')
         print('-----------------------------------------------------\n')
         
-        for i in range(len(g)):
-            print('{0:3d} \t {1:.5e} \t {2:.5e} \t {3:.5e}'.format(i+1, g[i], tau[i], dtau[i]))
+        for i in range(len(j)):
+            print('{0:3d} \t {1:.5e} \t {2:.5e} \t {3:.5e}'.format(i+1, j[i], lam[i], dlam[i]))
         print("\n")
 
         np.savetxt('output/aic.dat', np.c_[wtBase, nzNbst, AICbst], fmt='%f\t%i\t%e')
 
-        S, T    = np.meshgrid(tau, texp)
+        S, T    = np.meshgrid(lam, texp)
         K       = -np.exp(-T/S)        # n * nmodes            
-        GtM     = Je + np.dot(K, g) 
+        JtM     = Je + np.dot(K, j) 
         
         if par['liquid']:
-            GtM += texp * invEta0
+            JtM += texp * invEta0
         
-        np.savetxt('output/Jfitd.dat', np.c_[texp, GtM], fmt='%e')
+        np.savetxt('output/Jfitd.dat', np.c_[texp, JtM], fmt='%e')
 
 
-    return Nopt, g, tau, error
+    return Nopt, j, lam, error
 
 #############################
 #

@@ -141,7 +141,7 @@ def getKernMat(s, t):
     
     return np.exp(-T/S) * hsv;
 
-def kernel_prestore(Lplus, kernMat, texp, Jexp):
+def kernel_prestore(Lplus, kernMat, texp):
     """
 
          Lplus   = guessed [Lspec, Je] or [Lspec, Je, eta0inv]

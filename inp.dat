@@ -14,7 +14,7 @@
 # Filename for "experimental" data. PlainTXT
 # It should contain J(t) in 2 columns [t Jt]
 #
-JexpFile 	: 'Jt2.dat'
+JexpFile 	: 'Jt.dat'
 
 #
 # Viscoelastic Liquid: [solids have J(t -> inf) -> Je]
@@ -108,6 +108,6 @@ rho_cutoff  : 0
 #           smaller value increases cost; typical range 0.10 - 0.25
 deltaBaseWeightDist : 0.2
 
-# discSpec: how close do successive modes (tau2/tau1) have to be before we 
+# discSpec: how close do successive modes (lam2/lam1) have to be before we 
 #           try to mege them
-minTauSpacing       : 1.25
+minLamSpacing       : 1.25

@@ -1,4 +1,7 @@
 #
+# 7/2023: allowing an optional weight column in the input data file
+#         improving encapsulation of functions
+#
 # Help to find continuous retardation spectrum
 #
 
@@ -10,12 +13,13 @@ from common import *
 
 # HELPER FUNCTIONS
 
-def InitializeSpectrum(texp, Jexp, s, kernMat, isLiquid):
+def InitializeSpectrum(texp, Jexp, wexp, s, kernMat, isLiquid):
     """
     Function: InitializeH(input)
     
     Input:  texp       = n*1 vector [t],
             Jexp       = n*1 vector [Jt],
+            wexp       = n*1 weight vector,
                s       = relaxation modes,
                kernMat = matrix for faster kernel evaluation
                isLiquid = optional; if liquid
@@ -41,28 +45,9 @@ def InitializeSpectrum(texp, Jexp, s, kernMat, isLiquid):
         Je       = max(Jexp)        
         Lplus    = np.append(Lspec, Je)
 
-
-    LplusImp = getH(lam, texp, Jexp, Lplus, kernMat)
-
-    # plt.plot(s, LplusImp[:-2])
-    # plt.plot(s, Lplus[:-2])    
-    # plt.xscale('log')
-    # plt.show()
-
-
-    # plt.clf()
-    # K = kernel_prestore(LplusImp, kernMat, texp, Jexp)
-    # plt.loglog(texp, Jexp,'o', texp, K, 'k-')
-    # plt.xlabel(r'$t$')
-    # plt.ylabel(r'$J(t)$')
-    
-    # plt.tight_layout()
-    # plt.show()
-
-    # quit()
+    LplusImp = getH(lam, texp, Jexp, wexp, Lplus, kernMat)
 
     return LplusImp
-
 
 def getAmatrix(ns):
     """Generate symmetric matrix A = L' * L required for error analysis:
@@ -73,7 +58,7 @@ def getAmatrix(ns):
     L  = L[1:nl+1,:]
     return np.dot(L.T, L)
     
-def getBmatrix(Lplus, kernMat, texp, Jexp):
+def getBmatrix(Lplus, kernMat, texp, Jexp, wexp):
     """get the Bmatrix required for error analysis; helper for lcurve()
        not explicitly accounting for G0 in Jr because otherwise I get underflow problems"""
  
@@ -83,21 +68,21 @@ def getBmatrix(Lplus, kernMat, texp, Jexp):
     r   = np.zeros(n);         # vector of size (n);
 
     # furnish relevant portion of Jacobian and residual
-    Kmatrix = np.dot((1./Jexp).reshape(n,1), np.ones((1,ns)));
+    Kmatrix = np.dot((wexp/Jexp).reshape(n,1), np.ones((1,ns)));
     Jr      = -kernelD(Lplus[:ns], kernMat) * Kmatrix;    
-    r       = 1. - kernel_prestore(Lplus, kernMat, texp, Jexp)/Jexp
+    r       = wexp * (1. - kernel_prestore(Lplus, kernMat, texp)/Jexp)
     B       = np.dot(Jr.T, Jr) + np.diag(np.dot(r.T, Jr))
 
     return B
 
 
 # changing interface
-def lcurve(texp, Jexp, Lgs, kernMat, par):
+def lcurve(texp, Jexp, wexp, Lgs, kernMat, par):
 
     """ 
      Function: lcurve(input)
     
-     Input: t/Jexp  = n*1 vector [t/Jt],
+     Input: t/Jexp  = n*1 vector [t/Jt], [weight wexp]
             Lgs     = guessed LplusGuess,
             kernMat = matrix for faster kernel evaluation
             par     = parameter dictionary
@@ -141,27 +126,23 @@ def lcurve(texp, Jexp, Lgs, kernMat, par):
         
         lamb   = lam[i]
 
-        Lplus  = getH(lamb, texp, Jexp, Lplus, kernMat)
-        rho[i] = np.linalg.norm((1. - kernel_prestore(Lplus, kernMat, texp, Jexp)/Jexp))
-        Bmat   = getBmatrix(Lplus, kernMat, texp, Jexp)            
+        Lplus  = getH(lamb, texp, Jexp, wexp, Lplus, kernMat)
+        rho[i] = np.linalg.norm(wexp * (1. - kernel_prestore(Lplus, kernMat, texp)/Jexp))
+        Bmat   = getBmatrix(Lplus, kernMat, texp, Jexp, wexp)            
 
         eta[i]       = np.linalg.norm(np.diff(Lplus[:ns], n=2))
         Lplambda[:,i] = Lplus
 
-
-
         _, LogDetC = np.linalg.slogdet(lamb * Amat + Bmat)
         V          =  rho[i]**2 + lamb * eta[i]**2        
                     
-        # this assumes a prior exp(-lam*1e6)
-        # ~ logP[i]    = -V + 0.5 * (LogDetN + ns*np.log(lamb) - LogDetC) - lamb*1e6
+        # this assumes a prior exp(-lam)
         logP[i]    = -V + 0.5 * (LogDetN + ns*np.log(lamb) - LogDetC) - lamb
         
         # # print progress
         # if i == len(lam)-1:
         #     print("\n")
         # print('{:2d} {:.2e} {:.2e} {:.2e} {:.2e}'.format(i, lamb, rho[i], eta[i], logPmax-logP[i]))
-
         
         if(logP[i] > logPmax):
             logPmax = logP[i]
@@ -179,25 +160,25 @@ def lcurve(texp, Jexp, Lgs, kernMat, par):
     Lplambda = Lplambda[:,i:]
     
     #
-    # new lamC discard old!
+    # new lamM discard old!
     #
     plam = np.exp(logP); plam = plam/np.sum(plam)
-    lamC = np.exp(np.sum(plam*np.log(lam)))
+    lamM = np.exp(np.sum(plam*np.log(lam)))
 
     #
     # Dialling in the Smoothness Factor
     #
     if par['SmFacLam'] > 0:
-        lamC = np.exp(np.log(lamC) + par['SmFacLam']*(max(np.log(lam)) - np.log(lamC)));
+        lamM = np.exp(np.log(lamM) + par['SmFacLam']*(max(np.log(lam)) - np.log(lamM)));
     elif par['SmFacLam'] < 0:
-        lamC = np.exp(np.log(lamC) + par['SmFacLam']*(np.log(lamC) - min(np.log(lam))));
+        lamM = np.exp(np.log(lamM) + par['SmFacLam']*(np.log(lamM) - min(np.log(lam))));
 
     #
-    # printing this here for now because storing lamC for sometime only
+    # printing this here for now because storing lamM for sometime only
     #
     if par['plotting']:
         plt.clf()
-        plt.axvline(x=lamC, c='gray', label=r'$\lambda_c$')
+        plt.axvline(x=lamM, c='gray', label=r'$\lambda_c$')
         plt.ylim(-15,1)
         plt.plot(lam, logP, 'o-')
         plt.xscale('log')
@@ -206,18 +187,17 @@ def lcurve(texp, Jexp, Lgs, kernMat, par):
         plt.legend(loc='upper left')
         plt.tight_layout()
         plt.savefig('output/logP.pdf')
-        
-        
-    return lamC, lam, rho, eta, logP, Lplambda
+                
+    return lamM, lam, rho, eta, logP, Lplambda
 
-def getH(lam, texp, Jexp, Lplus, kernMat):
+def getH(lam, texp, Jexp, wexp, Lplus, kernMat):
 
     """Purpose: Given a lambda, this function finds the H_lambda(s) that minimizes V(lambda)
     
               V(lambda) := ||Jexp - kernel(L)||^2 +  lambda * ||F L||^2
     
      Input  : lambda     = regularization parameter ,
-              texp, Jexp = experimental data,
+              texp, Jexp = experimental data, [weight wexp]
               Lspec      = guessed Lspec,
               kernMat    = matrix for faster kernel evaluation
               Je         = initial Je guess
@@ -228,26 +208,24 @@ def getH(lam, texp, Jexp, Lplus, kernMat):
     """
 
     ns  = kernMat.shape[1];
-    nex = len(Lplus) - ns
-    res_lsq = least_squares(residualLM, Lplus, jac=jacobianLM, args=(lam, texp, Jexp, kernMat))
+    res_lsq = least_squares(residualLM, Lplus, jac=jacobianLM, args=(lam, texp, Jexp, wexp, kernMat))
 
     return res_lsq.x
 
-def residualLM(Lplus, lam, texp, Jexp, kernMat):
+def residualLM(Lplus, lam, texp, Jexp, wexp, kernMat):
     """
     %
     % HELPER FUNCTION: Gets Residuals r
      Input  : Lplus   = guessed [Lspec, Je] or [Lspec, Je, eta0inv]
               lambda  = regularization parameter ,
               t/Jexp  = experimental data,
-             kernMat = matrix for faster kernel evaluation
+              wexp    = weighting factors,
+              kernMat = matrix for faster kernel evaluation
     
      Output : a set of n+nl residuals,
               the first n correspond to the kernel
               the last  nl correspond to the smoothness criterion
     %"""
-
-
     n   = kernMat.shape[0];
     ns  = kernMat.shape[1];
     nl  = ns - 2;
@@ -255,7 +233,7 @@ def residualLM(Lplus, lam, texp, Jexp, kernMat):
     r   = np.zeros(n + nl);
     
     # normal residuals
-    r[0:n] = 1. - kernel_prestore(Lplus, kernMat, texp, Jexp)/Jexp  # the Jt and
+    r[0:n] = wexp * (1. - kernel_prestore(Lplus, kernMat, texp)/Jexp)  # the Jt and
     
     # the curvature constraint is not affected by G0
     r[n:n+nl] = np.sqrt(lam) * np.diff(Lplus[:ns], n=2)  # second derivative
@@ -263,7 +241,7 @@ def residualLM(Lplus, lam, texp, Jexp, kernMat):
         
     return r
         
-def jacobianLM(Lplus, lam, texp, Jexp, kernMat):
+def jacobianLM(Lplus, lam, texp, Jexp, wexp, kernMat):
     """
     HELPER FUNCTION for optimization: Get Jacobian J
     
@@ -286,7 +264,7 @@ def jacobianLM(Lplus, lam, texp, Jexp, kernMat):
     
     
     # Furnish the Jacobian Jr (n+ns)*ns matrix
-    Kmatrix         = np.dot((1./Jexp).reshape(n,1), np.ones((1,ns)));
+    Kmatrix         = np.dot((wexp/Jexp).reshape(n,1), np.ones((1,ns)));
 
     # ~ if len(H) > ns:
 
@@ -294,11 +272,11 @@ def jacobianLM(Lplus, lam, texp, Jexp, kernMat):
     Jr    = np.zeros((n + nl, ns+nex))
 
     Jr[0:n, 0:ns]   = -kernelD(Lspec, kernMat) * Kmatrix;
-    Jr[0:n, ns]     = -1./Jexp                             # column for dr_i/dJe
+    Jr[0:n, ns]     = -wexp/Jexp                             # column for dr_i/dJe
     Jr[n:n+nl,0:ns] = np.sqrt(lam) * L;
 
     if nex == 2:
-        Jr[0:n, ns+1]  = -texp/Jexp                        # column for dr_i/dinvEta0
+        Jr[0:n, ns+1]  = -texp*wexp/Jexp                        # column for dr_i/dinvEta0
          
     return Jr
 
@@ -336,7 +314,7 @@ def getContSpec(par):
     if par['verbose']:
         print('\n(*) Start\n(*) Loading Data File: {}...'.format(par['JexpFile']))
 
-    texp, Jexp = GetExpData(par['JexpFile'])
+    texp, Jexp, wexp = GetExpData(par['JexpFile'])
 
     if par['verbose']:
         print('(*) Initial Set up...', end="")
@@ -363,7 +341,7 @@ def getContSpec(par):
     tic     = time.time()
         
     # get an initial guess for Lgs, Je, invEta0
-    LpGS = InitializeSpectrum(texp, Jexp, s, kernMat, par['liquid'])
+    LpGS = InitializeSpectrum(texp, Jexp, wexp, s, kernMat, par['liquid'])
 
     if par['verbose']:
         te   = time.time() - tic
@@ -372,7 +350,7 @@ def getContSpec(par):
 
     # Find Optimum Lambda with 'lcurve'
     if par['lamC'] == 0:
-        lamC, lam, rho, eta, logP, Llam = lcurve(texp, Jexp, LpGS, kernMat, par)
+        lamC, lam, rho, eta, logP, Llam = lcurve(texp, Jexp, wexp, LpGS, kernMat, par)
     else:
         lamC = par['lamC']
 
@@ -386,9 +364,9 @@ def getContSpec(par):
     # Get the best spectrum
 
     if par['lamC'] == 0:
-        Lplus = getH(lamC, texp, Jexp, Llam[:,-1], kernMat)
+        Lplus = getH(lamC, texp, Jexp, wexp, Llam[:,-1], kernMat)
     else:
-        Lplus = getH(lamC, texp, Jexp, LpGS, kernMat)
+        Lplus = getH(lamC, texp, Jexp, wexp, LpGS, kernMat)
     
     print('Je = {0:0.3e};'.format(Lplus[ns]), end="")
 
@@ -404,7 +382,7 @@ def getContSpec(par):
         print('done ({0:.1f} seconds)\n(*) Writing and Printing, ...'.format(te), end="")
 
         # Save inferred J(t)
-        K = kernel_prestore(Lplus, kernMat, texp, Jexp)
+        K = kernel_prestore(Lplus, kernMat, texp)
 
         if par['liquid']:
             np.savetxt('output/L.dat', np.c_[s, Lplus[:ns]], fmt='%.8e', 
@@ -474,7 +452,7 @@ def getContSpec(par):
         plt.clf()
 
 
-        K = kernel_prestore(Lplus, kernMat, texp, Jexp)
+        K = kernel_prestore(Lplus, kernMat, texp)
 
         plt.plot(texp, Jexp, 'o', alpha=0.7)
         plt.plot(texp, K, 'C1')
