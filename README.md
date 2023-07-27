@@ -1,6 +1,6 @@
 # pyJt
 
-Extract continuous and discrete *retardation* spectra from creep compliance J(t). This program is based on papers for extracting the relaxation spectrum from G(t). The papers that describe the underlying method are:
+Extract the continuous and discrete *retardation* spectra from creep compliance J(t). This program is based on papers for extracting the relaxation spectrum from G(t). The papers that describe the underlying method are:
 
 + Shanbhag, S., "pyReSpect: A Computer Program to Extract Discrete and Continuous Spectra from Stress Relaxation Experiments", Macromolecular Theory and Simulations, **2019**, 1900005 [doi: 10.1002/mats.201900005].
 + Takeh, A. and Shanbhag, S. "A computer program to extract the continuous and discrete relaxation spectra from dynamic viscoelastic measurements", Applied Rheology **2013**, 23, 24628. 
@@ -22,7 +22,7 @@ It containts a third module `common.py` which contains utilities required by bot
 The user is expected to supply two files:
 
 + `inp.dat` is used to control parameters and settings
-+ `Jt.dat` (or similar) which contains two columns of data `t` and `J(t)`
++ `Jt.dat` (or similar) which contains two columns of data `t` and `J(t)` [07/2023: optionally a third weight column]
 
 ### Output Files
 
