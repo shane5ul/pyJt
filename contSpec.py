@@ -45,7 +45,7 @@ def InitializeSpectrum(texp, Jexp, wexp, s, kernMat, isLiquid):
         Je       = max(Jexp)        
         Lplus    = np.append(Lspec, Je)
 
-    LplusImp = getH(lam, texp, Jexp, wexp, Lplus, kernMat)
+    LplusImp = getL(lam, texp, Jexp, wexp, Lplus, kernMat)
 
     return LplusImp
 
@@ -126,7 +126,7 @@ def lcurve(texp, Jexp, wexp, Lgs, kernMat, par):
         
         lamb   = lam[i]
 
-        Lplus  = getH(lamb, texp, Jexp, wexp, Lplus, kernMat)
+        Lplus  = getL(lamb, texp, Jexp, wexp, Lplus, kernMat)
         rho[i] = np.linalg.norm(wexp * (1. - kernel_prestore(Lplus, kernMat, texp)/Jexp))
         Bmat   = getBmatrix(Lplus, kernMat, texp, Jexp, wexp)            
 
@@ -190,7 +190,7 @@ def lcurve(texp, Jexp, wexp, Lgs, kernMat, par):
                 
     return lamM, lam, rho, eta, logP, Lplambda
 
-def getH(lam, texp, Jexp, wexp, Lplus, kernMat):
+def getL(lam, texp, Jexp, wexp, Lplus, kernMat):
 
     """Purpose: Given a lambda, this function finds the H_lambda(s) that minimizes V(lambda)
     
@@ -364,9 +364,9 @@ def getContSpec(par):
     # Get the best spectrum
 
     if par['lamC'] == 0:
-        Lplus = getH(lamC, texp, Jexp, wexp, Llam[:,-1], kernMat)
+        Lplus = getL(lamC, texp, Jexp, wexp, Llam[:,-1], kernMat)
     else:
-        Lplus = getH(lamC, texp, Jexp, wexp, LpGS, kernMat)
+        Lplus = getL(lamC, texp, Jexp, wexp, LpGS, kernMat)
     
     print('Je = {0:0.3e};'.format(Lplus[ns]), end="")
 
