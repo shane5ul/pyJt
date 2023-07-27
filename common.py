@@ -75,31 +75,56 @@ def readInput(fname='inp.dat'):
 def GetExpData(fname):
 
     """Function: GetExpData(input)
+
+           7/27/2023: allowing for optional "weight" column to be specified
+                  to weigh the relative importance of datapoints [assume 1 if not specified]
+                   
        Reads in the experimental data from the input file
-       Input:  fname = name of file that contains J(t) in 2 columns [t Jt]
+       Input:  fname = name of file that contains J(t) in 2 columns [t Jt] or 3 columns
        Output: A n*1 vector "t", and a n*1 vector Jt"""
-       
+
+########
     try:
-        to, Jto = np.loadtxt(fname, unpack=True)  # 2 columns, t - Jt
+
+        data = np.loadtxt(fname)
+        cols = data.shape[1]		# number of columns in data file
+
+        # if only 2 columns, then set weights to 1.0
+        if cols == 2:
+            to  = data[:,0]
+            Jto = data[:,1]
+        else:
+            to   = data[:,0]
+            Jto  = data[:,1]
+            wJo  = data[:,2]
+
     except OSError:
         print('*Error*: J(t) data file is either not in the correct path, or incorrectly formatted')
         quit()
+    
     #
     # any repeated "time" values
     #
-    
-    to, indices = np.unique(to, return_index = True)    
+    to, indices = np.unique(to, return_index = True)	
     Jto         = Jto[indices]
 
+    if cols == 3:
+        wJo     = wJo[indices]
+
+    #
+    # if three columns are provided then assume that the data is preprocessed
+    # and it does not need any interpolation; 
     #
     # Sanitize the input by spacing it out. Using linear interpolation
     #
-    
-    f  =  interp1d(to, Jto, fill_value="extrapolate")
-    t  =  np.logspace(np.log10(np.min(to)), np.log10(np.max(to)), max(len(to),100))        
-    Jt =  f(t)
+    if cols == 2:
+        f  =  interp1d(to, Jto, fill_value="extrapolate")
+        t  =  np.geomspace(np.min(to), np.max(to), 100)		
+        Jt =  f(t)
 
-    return t, Jt
+        return t, Jt, np.ones(len(Jt))
+    else:
+        return to, Jto, wJo    
 
 def getKernMat(s, t):
     """furnish kerMat() which helps faster kernel evaluation
